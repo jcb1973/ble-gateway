@@ -1,0 +1,6 @@
+*.ini
+*.cfg
+*.db
+bin/
+lib/
+lib64
