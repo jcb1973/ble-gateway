@@ -1,47 +1,65 @@
-# BLE Gateway
+# ble-gateway
 
-A lightweight Python script that reads temperature and humidity from a SensorPush HT1 sensor via Bluetooth Low Energy, stores readings in SQLite, and sends SMS alerts via Twilio when humidity drops below a threshold — no expensive SensorPush gateway required.
+A lightweight Bluetooth Low Energy gateway that monitors environmental conditions and sends SMS alerts when thresholds are breached. Built to run on a Raspberry Pi (or any Bluetooth-capable Linux/Mac).
 
-## Requirements
+## What it does
 
-- Python 3.8+
-- A Bluetooth-capable machine (Raspberry Pi, Mac, Linux)
-- SensorPush HT1 sensor
-- Twilio account (for SMS alerts)
+1. Scans for a SensorPush HT1 sensor via BLE
+2. Reads temperature and humidity at configurable intervals
+3. Logs every reading to a local SQLite database
+4. Sends an SMS alert via Twilio if humidity drops below a threshold
+5. Respects a cooldown period to avoid alert fatigue
+
+## Why
+
+Commercial IoT gateways are expensive and lock you into vendor clouds. This is a single Python script that does the job with hardware you already have.
+
+## Architecture
+
+```
+SensorPush HT1  ──BLE──▶  Raspberry Pi (gateway.py)
+                                │
+                                ├──▶ SQLite (local time-series log)
+                                │
+                                └──▶ Twilio SMS (threshold alerts)
+```
+
+## Stack
+
+- **Language:** Python 3.8+
+- **BLE:** [Bleak](https://github.com/hbldh/bleak)
+- **Alerts:** Twilio SDK
+- **Storage:** SQLite
+- **Hardware:** Any Bluetooth-capable device — Raspberry Pi, Mac, Linux box
 
 ## Setup
 
-Install dependencies:
-
-```sh
-pip install bleak
+```bash
+pip install bleak twilio
+cp config.ini.example config.ini  # edit with your settings
+python gateway.py
 ```
 
-Create a `config.ini` in the project root:
+## Configuration
+
+Edit `config.ini`:
 
 ```ini
-[sensorpush]
-mac = XX:XX:XX:XX:XX:XX
+[sensor]
+mac = AA:BB:CC:DD:EE:FF
+
+[thresholds]
+humidity_min = 30.0
 
 [alerts]
-humidity_min = 30.0
-alert_cooldown_minutes = 60
-sender_id = SensorPush
+cooldown_minutes = 60
 
 [sampling]
 interval_seconds = 300
 
 [twilio]
-account_sid = AC...
+account_sid = ...
 auth_token = ...
-messaging_service_sid = MG...
-to_phone = +1234567890
+messaging_service_sid = ...
+to_number = +1234567890
 ```
-
-## Usage
-
-```sh
-python gateway.py
-```
-
-The script runs in a continuous loop — scanning for the sensor, logging readings to `sensordata.db`, and sending an SMS alert when humidity falls below the configured threshold.
