@@ -21,7 +21,13 @@ SensorPush HT1  ──BLE──▶  Raspberry Pi (gateway.py)
                                 │
                                 ├──▶ SQLite (local time-series log)
                                 │
-                                └──▶ Twilio SMS (threshold alerts)
+                                ├──▶ Twilio SMS (threshold alerts)
+                                │
+                          cron + scp
+                                ├──▶ status.json ──▶ Web server
+                                                        │
+                                                   index.html
+                                                   (status page)
 ```
 
 ## Stack
@@ -39,6 +45,39 @@ pip install bleak twilio
 cp config.ini.example config.ini  # edit with your settings
 python gateway.py
 ```
+
+## JSON export & web status
+
+`gateway.py --json` dumps the latest reading from SQLite as JSON:
+
+```json
+{
+  "timestamp": "2026-04-02T14:30:00",
+  "temperature_c": 21.5,
+  "humidity_pct": 45.2,
+  "rssi": -67
+}
+```
+
+`upload-status.sh` exports this JSON and uploads it to a web server via `scp`:
+
+```bash
+#!/bin/sh
+cd "$(dirname "$0")"
+/home/youruser/ble-gateway/bin/python gateway.py --json > status.json && scp status.json user@yourserver:/var/www/ble-data/status.json
+```
+
+Run it on a schedule with cron. For example, every 5 minutes:
+
+```
+crontab -e
+```
+
+```
+*/5 * * * * /home/youruser/ble-gateway/upload-status.sh >> /home/youruser/ble-gateway/cron.log 2>&1
+```
+
+On the server, `index.html` fetches `status.json` and displays the current sensor state. Serve both files from the same directory (e.g. `/var/www/html/`).
 
 ## Configuration
 
