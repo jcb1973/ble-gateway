@@ -164,21 +164,36 @@ async def main():
         await asyncio.sleep(INTERVAL)
 
 
+def _trend(current, previous):
+    if previous is None:
+        return "stable"
+    diff = current - previous
+    if diff > 0.1:
+        return "rising"
+    elif diff < -0.1:
+        return "falling"
+    return "stable"
+
+
 def dump_latest():
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
+    rows = conn.execute(
         "SELECT timestamp, temperature_c, humidity_pct, rssi "
-        "FROM readings ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+        "FROM readings ORDER BY id DESC LIMIT 2"
+    ).fetchall()
     conn.close()
-    if not row:
+    if not rows:
         print("{}", file=sys.stderr)
         sys.exit(1)
+    cur = rows[0]
+    prev = rows[1] if len(rows) > 1 else None
     print(json.dumps({
-        "timestamp": row[0],
-        "temperature_c": row[1],
-        "humidity_pct": row[2],
-        "rssi": row[3],
+        "timestamp": cur[0],
+        "temperature_c": cur[1],
+        "humidity_pct": cur[2],
+        "rssi": cur[3],
+        "temp_trend": _trend(cur[1], prev[1] if prev else None),
+        "humidity_trend": _trend(cur[2], prev[2] if prev else None),
     }))
 
 
