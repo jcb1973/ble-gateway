@@ -50,7 +50,7 @@
   <script>
     async function load() {
       try {
-        const r = await fetch('status.json', { cache: 'no-store' });
+        const r = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
         const d = await r.json();
         document.getElementById('temp').textContent = d.temperature_c.toFixed(1);
         document.getElementById('hum').textContent = d.humidity_pct.toFixed(1);
@@ -58,7 +58,7 @@
         const ts = new Date(d.timestamp);
         const age = (Date.now() - ts) / 60000;
         document.getElementById('ts').textContent = ts.toLocaleString();
-        const stale = age > 5;
+        const stale = age > 10;
         document.getElementById('dot').style.background = stale ? '#BA7517' : '#639922';
         document.getElementById('status').textContent = stale ? 'Last seen ' + Math.round(age) + 'm ago' : 'Live';
         document.getElementById('warn').style.display = stale ? 'inline-block' : 'none';
