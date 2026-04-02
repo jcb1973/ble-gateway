@@ -79,6 +79,46 @@ crontab -e
 
 On the server, `index.html` fetches `status.json` and displays the current sensor state. Serve both files from the same directory (e.g. `/var/www/html/`).
 
+## Running as a service
+
+Create a systemd unit file:
+
+```bash
+sudo nano /etc/systemd/system/ble-gateway.service
+```
+
+```ini
+[Unit]
+Description=BLE Gateway
+After=bluetooth.target
+
+[Service]
+ExecStart=/home/youruser/ble-gateway/bin/python /home/youruser/ble-gateway/gateway.py
+WorkingDirectory=/home/youruser/ble-gateway
+Restart=on-failure
+RestartSec=10
+User=youruser
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable ble-gateway
+sudo systemctl start ble-gateway
+```
+
+Useful commands:
+
+```bash
+sudo systemctl status ble-gateway   # check status
+sudo systemctl restart ble-gateway  # restart after config changes
+journalctl -u ble-gateway -f        # follow logs
+```
+
 ## Configuration
 
 Edit `config.ini`:
