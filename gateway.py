@@ -1,7 +1,9 @@
 import asyncio
 import configparser
+import json
 import logging
 import sqlite3
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -162,5 +164,26 @@ async def main():
         await asyncio.sleep(INTERVAL)
 
 
+def dump_latest():
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT timestamp, temperature_c, humidity_pct, rssi "
+        "FROM readings ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if not row:
+        print("{}", file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps({
+        "timestamp": row[0],
+        "temperature_c": row[1],
+        "humidity_pct": row[2],
+        "rssi": row[3],
+    }))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    if "--json" in sys.argv:
+        dump_latest()
+    else:
+        asyncio.run(main())
