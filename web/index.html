@@ -20,6 +20,13 @@
     .status-text { font-size: 13px; color: #888; }
     .warn { background: #fef3cd; color: #856404; font-size: 12px; padding: 3px 10px; border-radius: 6px; display: none; }
     .ts { font-size: 13px; color: #888; }
+    @media (max-width: 480px) {
+      body { padding: 1rem; }
+      .grid { grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
+      .card { padding: 1rem; }
+      .metric { font-size: 32px; }
+      .footer { flex-wrap: wrap; gap: 8px; }
+    }
   </style>
 </head>
 <body>
