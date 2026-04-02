@@ -14,6 +14,7 @@
     .label { font-size: 13px; color: #888; margin-bottom: 6px; }
     .metric { font-size: 40px; font-weight: 500; line-height: 1; }
     .unit { font-size: 18px; color: #888; margin-left: 4px; }
+    .trend { font-size: 18px; margin-left: 4px; color: #888; }
     .footer { display: flex; justify-content: space-between; align-items: center; }
     .status-row { display: flex; align-items: center; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #639922; }
@@ -34,11 +35,11 @@
     <div class="grid">
       <div class="card">
         <div class="label">Temperature</div>
-        <div class="metric"><span id="temp">—</span><span class="unit">°C</span></div>
+        <div class="metric"><span id="temp">—</span><span class="unit">°C</span><span class="trend" id="temp-trend"></span></div>
       </div>
       <div class="card">
         <div class="label">Humidity</div>
-        <div class="metric"><span id="hum">—</span><span class="unit">%</span></div>
+        <div class="metric"><span id="hum">—</span><span class="unit">%</span><span class="trend" id="hum-trend"></span></div>
       </div>
       <div class="card">
         <div class="label">Signal</div>
@@ -62,6 +63,9 @@
         document.getElementById('temp').textContent = d.temperature_c.toFixed(1);
         document.getElementById('hum').textContent = d.humidity_pct.toFixed(1);
         document.getElementById('rssi').textContent = d.rssi;
+        const arrow = t => t === 'rising' ? '\u25B2' : t === 'falling' ? '\u25BC' : '';
+        document.getElementById('temp-trend').textContent = arrow(d.temp_trend);
+        document.getElementById('hum-trend').textContent = arrow(d.humidity_trend);
         const ts = new Date(d.timestamp);
         const age = (Date.now() - ts) / 60000;
         document.getElementById('ts').textContent = ts.toLocaleString();
