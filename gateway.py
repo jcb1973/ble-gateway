@@ -11,8 +11,6 @@ from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 import base64
 
-from bleak import BleakScanner
-
 # --- Setup ---
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "sensordata.db"
@@ -113,6 +111,7 @@ def check_alerts(temp_c, humidity, cfg):
 
 # --- BLE scanning ---
 async def take_reading(target_mac):
+    from bleak import BleakScanner
     result = {}
 
     def callback(device, ad_data):
