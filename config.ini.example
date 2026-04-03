@@ -1,0 +1,16 @@
+[sensorpush]
+mac = AA:BB:CC:DD:EE:FF
+
+[alerts]
+humidity_min = 30.0
+alert_cooldown_minutes = 60
+sender_id = BLE Gateway
+
+[sampling]
+interval_seconds = 300
+
+[twilio]
+account_sid = ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+auth_token = your_auth_token_here
+messaging_service_sid = MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+to_phone = +1234567890

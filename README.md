@@ -34,14 +34,14 @@ SensorPush HT1  ──BLE──▶  Raspberry Pi (gateway.py)
 
 - **Language:** Python 3.8+
 - **BLE:** [Bleak](https://github.com/hbldh/bleak)
-- **Alerts:** Twilio SDK
+- **Alerts:** Twilio (REST API)
 - **Storage:** SQLite
 - **Hardware:** Any Bluetooth-capable device — Raspberry Pi, Mac, Linux box
 
 ## Setup
 
 ```bash
-pip install bleak twilio
+pip install bleak
 cp config.ini.example config.ini  # edit with your settings
 python gateway.py
 ```
@@ -121,24 +121,23 @@ journalctl -u ble-gateway -f        # follow logs
 
 ## Configuration
 
-Edit `config.ini`:
+Edit `config.ini` (see `config.ini.example`):
 
 ```ini
-[sensor]
+[sensorpush]
 mac = AA:BB:CC:DD:EE:FF
 
-[thresholds]
-humidity_min = 30.0
-
 [alerts]
-cooldown_minutes = 60
+humidity_min = 30.0
+alert_cooldown_minutes = 60
+sender_id = BLE Gateway
 
 [sampling]
 interval_seconds = 300
 
 [twilio]
-account_sid = ...
-auth_token = ...
-messaging_service_sid = ...
-to_number = +1234567890
+account_sid = ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+auth_token = your_auth_token_here
+messaging_service_sid = MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+to_phone = +1234567890
 ```

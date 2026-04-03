@@ -15,20 +15,7 @@ from bleak import BleakScanner
 
 # --- Setup ---
 BASE_DIR = Path(__file__).parent
-CONFIG = configparser.ConfigParser()
-CONFIG.read(BASE_DIR / "config.ini")
-
 DB_PATH = BASE_DIR / "sensordata.db"
-TARGET_MAC = CONFIG.get("sensorpush", "mac")
-HUMIDITY_MIN = CONFIG.getfloat("alerts", "humidity_min")
-COOLDOWN = CONFIG.getint("alerts", "alert_cooldown_minutes") * 60
-SENDER_ID = CONFIG.get("alerts", "sender_id")
-INTERVAL = CONFIG.getint("sampling", "interval_seconds")
-
-TWILIO_SID = CONFIG.get("twilio", "account_sid")
-TWILIO_TOKEN = CONFIG.get("twilio", "auth_token")
-TWILIO_MSG_SID = CONFIG.get("twilio", "messaging_service_sid")
-TO_PHONE = CONFIG.get("twilio", "to_phone")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,49 +71,52 @@ def decode_ht1(company_id, payload):
 
 
 # --- Twilio SMS ---
-def send_sms(message):
+def send_sms(message, twilio_sid, twilio_token, twilio_msg_sid, to_phone):
     url = (
         f"https://api.twilio.com/2010-04-01/"
-        f"Accounts/{TWILIO_SID}/Messages.json"
+        f"Accounts/{twilio_sid}/Messages.json"
     )
     data = urlencode({
-        "MessagingServiceSid": TWILIO_MSG_SID,
-        "To": TO_PHONE,
+        "MessagingServiceSid": twilio_msg_sid,
+        "To": to_phone,
         "Body": message,
     }).encode()
-    auth = base64.b64encode(f"{TWILIO_SID}:{TWILIO_TOKEN}".encode()).decode()
+    auth = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
     req = Request(url, data=data, headers={"Authorization": f"Basic {auth}"})
     try:
         response = urlopen(req)
         body = response.read().decode()
         log.info(f"SMS sent: {message}")
         log.info(f"Twilio response: {body}")
+        return True
     except Exception as e:
         content = ""
         if hasattr(e, "read"):
             content = e.read().decode()
         log.error(f"SMS failed: {e} {content}")
+        return False
 
 # --- Alert check ---
-def check_alerts(temp_c, humidity):
+def check_alerts(temp_c, humidity, cfg):
     global last_alert_time
     now = time.time()
-    if humidity < HUMIDITY_MIN and (now - last_alert_time) > COOLDOWN:
+    if humidity < cfg["humidity_min"] and (now - last_alert_time) > cfg["cooldown"]:
         msg = (
             f"Low humidity alert! {humidity}% "
-            f"(threshold: {HUMIDITY_MIN}%). "
+            f"(threshold: {cfg['humidity_min']}%). "
             f"Temp: {temp_c}°C"
         )
-        send_sms(msg)
-        last_alert_time = now
+        if send_sms(msg, cfg["twilio_sid"], cfg["twilio_token"],
+                     cfg["twilio_msg_sid"], cfg["to_phone"]):
+            last_alert_time = now
 
 
 # --- BLE scanning ---
-async def take_reading():
+async def take_reading(target_mac):
     result = {}
 
     def callback(device, ad_data):
-        if device.address != TARGET_MAC:
+        if device.address != target_mac:
             return
         for cid, payload in ad_data.manufacturer_data.items():
             decoded = decode_ht1(cid, payload)
@@ -135,33 +125,53 @@ async def take_reading():
                 result["humidity"] = decoded[1]
                 result["rssi"] = ad_data.rssi
 
+    scan_duration = 30
     scanner = BleakScanner(detection_callback=callback)
     await scanner.start()
-    await asyncio.sleep(30)  # scan for 10 seconds
+    await asyncio.sleep(scan_duration)
     await scanner.stop()
     return result if result else None
 
 
+def load_config():
+    config = configparser.ConfigParser()
+    config.read(BASE_DIR / "config.ini")
+    return {
+        "target_mac": config.get("sensorpush", "mac"),
+        "humidity_min": config.getfloat("alerts", "humidity_min"),
+        "cooldown": config.getint("alerts", "alert_cooldown_minutes") * 60,
+        "sender_id": config.get("alerts", "sender_id"),
+        "interval": config.getint("sampling", "interval_seconds"),
+        "twilio_sid": config.get("twilio", "account_sid"),
+        "twilio_token": config.get("twilio", "auth_token"),
+        "twilio_msg_sid": config.get("twilio", "messaging_service_sid"),
+        "to_phone": config.get("twilio", "to_phone"),
+    }
+
+
 async def main():
+    cfg = load_config()
     log.info("BLE Gateway starting...")
-    log.info(f"Target: {TARGET_MAC}")
-    log.info(f"Humidity alert threshold: {HUMIDITY_MIN}%")
-    log.info(f"Sample interval: {INTERVAL}s")
+    log.info(f"Target: {cfg['target_mac']}")
+    log.info(f"Humidity alert threshold: {cfg['humidity_min']}%")
+    log.info(f"Sample interval: {cfg['interval']}s")
 
     conn = init_db()
 
     while True:
+        t0 = time.monotonic()
         try:
-            reading = await take_reading()
+            reading = await take_reading(cfg["target_mac"])
             if reading:
                 store_reading(conn, reading["temp_c"], reading["humidity"], reading["rssi"])
-                check_alerts(reading["temp_c"], reading["humidity"])
+                check_alerts(reading["temp_c"], reading["humidity"], cfg)
             else:
                 log.warning("No reading from sensor")
         except Exception as e:
             log.error(f"Error: {e}")
 
-        await asyncio.sleep(INTERVAL)
+        elapsed = time.monotonic() - t0
+        await asyncio.sleep(max(0, cfg["interval"] - elapsed))
 
 
 def _trend(current, previous):
