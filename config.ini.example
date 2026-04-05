@@ -1,5 +1,8 @@
-[sensorpush]
+[device:Bedroom]
 mac = AA:BB:CC:DD:EE:FF
+
+[device:Living Room]
+mac = 11:22:33:44:55:66
 
 [alerts]
 humidity_min = 30.0

@@ -8,7 +8,8 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #111; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
     @media (prefers-color-scheme: dark) { body { background: #1a1a1a; color: #eee; } .card { background: #2a2a2a; border-color: #3a3a3a; } }
-    .wrap { width: 100%; max-width: 520px; }
+    .wrap { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 24px; }
+    .device-name { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
     .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
     .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 1.25rem 1.5rem; }
     .label { font-size: 13px; color: #888; margin-bottom: 6px; }
@@ -31,51 +32,54 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="grid">
-      <div class="card">
-        <div class="label">Temperature</div>
-        <div class="metric"><span id="temp">—</span><span class="unit">°C</span><span class="trend" id="temp-trend"></span></div>
-      </div>
-      <div class="card">
-        <div class="label">Humidity</div>
-        <div class="metric"><span id="hum">—</span><span class="unit">%</span><span class="trend" id="hum-trend"></span></div>
-      </div>
-      <div class="card">
-        <div class="label">Signal</div>
-        <div class="metric"><span id="rssi">—</span><span class="unit">dBm</span></div>
-      </div>
-    </div>
-    <div class="card footer">
-      <div class="status-row">
-        <div class="dot" id="dot"></div>
-        <span class="status-text" id="status">Loading...</span>
-      </div>
-      <span class="warn" id="warn">Stale data</span>
-      <span class="ts" id="ts"></span>
-    </div>
-  </div>
+  <div class="wrap" id="wrap"></div>
   <script>
+    const arrow = t => t === 'rising' ? '\u25B2' : t === 'falling' ? '\u25BC' : '';
+
+    function renderDevice(name, d) {
+      const ts = new Date(d.timestamp);
+      const age = (Date.now() - ts) / 60000;
+      const stale = age > 15;
+      const section = document.createElement('div');
+      section.className = 'device-section';
+      section.innerHTML = `
+        <div class="device-name">${name}</div>
+        <div class="grid">
+          <div class="card">
+            <div class="label">Temperature</div>
+            <div class="metric">${d.temperature_c.toFixed(1)}<span class="unit">\u00b0C</span><span class="trend">${arrow(d.temp_trend)}</span></div>
+          </div>
+          <div class="card">
+            <div class="label">Humidity</div>
+            <div class="metric">${d.humidity_pct.toFixed(1)}<span class="unit">%</span><span class="trend">${arrow(d.humidity_trend)}</span></div>
+          </div>
+          <div class="card">
+            <div class="label">Signal</div>
+            <div class="metric">${d.rssi}<span class="unit">dBm</span></div>
+          </div>
+        </div>
+        <div class="card footer">
+          <div class="status-row">
+            <div class="dot" style="background:${stale ? '#BA7517' : '#639922'}"></div>
+            <span class="status-text">${stale ? 'Last seen ' + Math.round(age) + 'm ago' : 'Live'}</span>
+          </div>
+          <span class="warn" style="display:${stale ? 'inline-block' : 'none'}">Stale data</span>
+          <span class="ts">${ts.toLocaleString()}</span>
+        </div>`;
+      return section;
+    }
+
     async function load() {
+      const wrap = document.getElementById('wrap');
       try {
         const r = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
-        const d = await r.json();
-        document.getElementById('temp').textContent = d.temperature_c.toFixed(1);
-        document.getElementById('hum').textContent = d.humidity_pct.toFixed(1);
-        document.getElementById('rssi').textContent = d.rssi;
-        const arrow = t => t === 'rising' ? '\u25B2' : t === 'falling' ? '\u25BC' : '';
-        document.getElementById('temp-trend').textContent = arrow(d.temp_trend);
-        document.getElementById('hum-trend').textContent = arrow(d.humidity_trend);
-        const ts = new Date(d.timestamp);
-        const age = (Date.now() - ts) / 60000;
-        document.getElementById('ts').textContent = ts.toLocaleString();
-        const stale = age > 15;
-        document.getElementById('dot').style.background = stale ? '#BA7517' : '#639922';
-        document.getElementById('status').textContent = stale ? 'Last seen ' + Math.round(age) + 'm ago' : 'Live';
-        document.getElementById('warn').style.display = stale ? 'inline-block' : 'none';
+        const data = await r.json();
+        wrap.innerHTML = '';
+        for (const [name, d] of Object.entries(data)) {
+          wrap.appendChild(renderDevice(name, d));
+        }
       } catch(e) {
-        document.getElementById('status').textContent = 'No data';
-        document.getElementById('dot').style.background = '#E24B4A';
+        wrap.innerHTML = '<div class="card"><span class="status-text">No data</span></div>';
       }
     }
     load();

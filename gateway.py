@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("ble-gateway")
 
-last_alert_time = 0
+last_alert_times = {}  # keyed by device name
 
 
 # --- Database ---
@@ -32,24 +32,31 @@ def init_db():
         CREATE TABLE IF NOT EXISTS readings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
+            device_name TEXT NOT NULL DEFAULT '',
             temperature_c REAL NOT NULL,
             humidity_pct REAL NOT NULL,
             rssi INTEGER
         )
     """)
+    # Migrate old schema: add device_name if missing
+    try:
+        conn.execute("ALTER TABLE readings ADD COLUMN device_name TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     return conn
 
 
-def store_reading(conn, temp_c, humidity, rssi):
+def store_reading(conn, device_name, temp_c, humidity, rssi):
     ts = datetime.now(timezone.utc).isoformat()
     conn.execute(
-        "INSERT INTO readings (timestamp, temperature_c, humidity_pct, rssi) "
-        "VALUES (?, ?, ?, ?)",
-        (ts, temp_c, humidity, rssi),
+        "INSERT INTO readings (timestamp, device_name, temperature_c, humidity_pct, rssi) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (ts, device_name, temp_c, humidity, rssi),
     )
     conn.commit()
-    log.info(f"Stored: {temp_c}°C, {humidity}%, RSSI {rssi}")
+    log.info(f"[{device_name}] Stored: {temp_c}°C, {humidity}%, RSSI {rssi}")
 
 
 # --- SensorPush HT1 decode ---
@@ -95,48 +102,57 @@ def send_sms(message, twilio_sid, twilio_token, twilio_msg_sid, to_phone):
         return False
 
 # --- Alert check ---
-def check_alerts(temp_c, humidity, cfg):
-    global last_alert_time
+def check_alerts(device_name, temp_c, humidity, cfg):
     now = time.time()
-    if humidity < cfg["humidity_min"] and (now - last_alert_time) > cfg["cooldown"]:
+    last = last_alert_times.get(device_name, 0)
+    if humidity < cfg["humidity_min"] and (now - last) > cfg["cooldown"]:
         msg = (
-            f"Low humidity alert! {humidity}% "
+            f"[{device_name}] Low humidity alert! {humidity}% "
             f"(threshold: {cfg['humidity_min']}%). "
             f"Temp: {temp_c}°C"
         )
         if send_sms(msg, cfg["twilio_sid"], cfg["twilio_token"],
                      cfg["twilio_msg_sid"], cfg["to_phone"]):
-            last_alert_time = now
+            last_alert_times[device_name] = now
 
 
 # --- BLE scanning ---
-async def take_reading(target_mac):
+async def take_readings(devices):
     from bleak import BleakScanner
-    result = {}
+    mac_to_name = {d["mac"]: d["name"] for d in devices}
+    results = {}
 
     def callback(device, ad_data):
-        if device.address != target_mac:
+        name = mac_to_name.get(device.address)
+        if name is None:
             return
         for cid, payload in ad_data.manufacturer_data.items():
             decoded = decode_ht1(cid, payload)
             if decoded:
-                result["temp_c"] = decoded[0]
-                result["humidity"] = decoded[1]
-                result["rssi"] = ad_data.rssi
+                results[name] = {
+                    "temp_c": decoded[0],
+                    "humidity": decoded[1],
+                    "rssi": ad_data.rssi,
+                }
 
     scan_duration = 30
     scanner = BleakScanner(detection_callback=callback)
     await scanner.start()
     await asyncio.sleep(scan_duration)
     await scanner.stop()
-    return result if result else None
+    return results
 
 
 def load_config():
     config = configparser.ConfigParser()
     config.read(BASE_DIR / "config.ini")
+    devices = []
+    for section in config.sections():
+        if section.startswith("device:"):
+            name = section.split(":", 1)[1]
+            devices.append({"name": name, "mac": config.get(section, "mac")})
     return {
-        "target_mac": config.get("sensorpush", "mac"),
+        "devices": devices,
         "humidity_min": config.getfloat("alerts", "humidity_min"),
         "cooldown": config.getint("alerts", "alert_cooldown_minutes") * 60,
         "sender_id": config.get("alerts", "sender_id"),
@@ -151,7 +167,8 @@ def load_config():
 async def main():
     cfg = load_config()
     log.info("BLE Gateway starting...")
-    log.info(f"Target: {cfg['target_mac']}")
+    for d in cfg["devices"]:
+        log.info(f"Device: {d['name']} ({d['mac']})")
     log.info(f"Humidity alert threshold: {cfg['humidity_min']}%")
     log.info(f"Sample interval: {cfg['interval']}s")
 
@@ -160,12 +177,15 @@ async def main():
     while True:
         t0 = time.monotonic()
         try:
-            reading = await take_reading(cfg["target_mac"])
-            if reading:
-                store_reading(conn, reading["temp_c"], reading["humidity"], reading["rssi"])
-                check_alerts(reading["temp_c"], reading["humidity"], cfg)
-            else:
-                log.warning("No reading from sensor")
+            readings = await take_readings(cfg["devices"])
+            for d in cfg["devices"]:
+                name = d["name"]
+                if name in readings:
+                    r = readings[name]
+                    store_reading(conn, name, r["temp_c"], r["humidity"], r["rssi"])
+                    check_alerts(name, r["temp_c"], r["humidity"], cfg)
+                else:
+                    log.warning(f"[{name}] No reading from sensor")
         except Exception as e:
             log.error(f"Error: {e}")
 
@@ -186,24 +206,34 @@ def _trend(current, previous):
 
 def dump_latest():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        "SELECT timestamp, temperature_c, humidity_pct, rssi "
-        "FROM readings ORDER BY id DESC LIMIT 2"
+    # Get distinct device names
+    devices = conn.execute(
+        "SELECT DISTINCT device_name FROM readings"
     ).fetchall()
-    conn.close()
-    if not rows:
+    if not devices:
         print("{}", file=sys.stderr)
         sys.exit(1)
-    cur = rows[0]
-    prev = rows[1] if len(rows) > 1 else None
-    print(json.dumps({
-        "timestamp": cur[0],
-        "temperature_c": cur[1],
-        "humidity_pct": cur[2],
-        "rssi": cur[3],
-        "temp_trend": _trend(cur[1], prev[1] if prev else None),
-        "humidity_trend": _trend(cur[2], prev[2] if prev else None),
-    }))
+    out = {}
+    for (name,) in devices:
+        rows = conn.execute(
+            "SELECT timestamp, temperature_c, humidity_pct, rssi "
+            "FROM readings WHERE device_name = ? ORDER BY id DESC LIMIT 2",
+            (name,),
+        ).fetchall()
+        if not rows:
+            continue
+        cur = rows[0]
+        prev = rows[1] if len(rows) > 1 else None
+        out[name] = {
+            "timestamp": cur[0],
+            "temperature_c": cur[1],
+            "humidity_pct": cur[2],
+            "rssi": cur[3],
+            "temp_trend": _trend(cur[1], prev[1] if prev else None),
+            "humidity_trend": _trend(cur[2], prev[2] if prev else None),
+        }
+    conn.close()
+    print(json.dumps(out))
 
 
 if __name__ == "__main__":
