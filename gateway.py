@@ -89,7 +89,7 @@ def send_sms(message, twilio_sid, twilio_token, twilio_msg_sid, to_phone):
     auth = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
     req = Request(url, data=data, headers={"Authorization": f"Basic {auth}"})
     try:
-        response = urlopen(req)
+        response = urlopen(req, timeout=10)
         body = response.read().decode()
         log.info(f"SMS sent: {message}")
         log.info(f"Twilio response: {body}")
@@ -138,8 +138,10 @@ async def take_readings(devices):
     scan_duration = 30
     scanner = BleakScanner(detection_callback=callback)
     await scanner.start()
-    await asyncio.sleep(scan_duration)
-    await scanner.stop()
+    try:
+        await asyncio.sleep(scan_duration)
+    finally:
+        await scanner.stop()
     return results
 
 
@@ -178,16 +180,20 @@ async def main():
         t0 = time.monotonic()
         try:
             readings = await take_readings(cfg["devices"])
-            for d in cfg["devices"]:
-                name = d["name"]
-                if name in readings:
-                    r = readings[name]
-                    store_reading(conn, name, r["temp_c"], r["humidity"], r["rssi"])
-                    check_alerts(name, r["temp_c"], r["humidity"], cfg)
-                else:
-                    log.warning(f"[{name}] No reading from sensor")
-        except Exception as e:
-            log.error(f"Error: {e}")
+        except Exception:
+            log.exception("BLE scan failed")
+            readings = {}
+        for d in cfg["devices"]:
+            name = d["name"]
+            if name not in readings:
+                log.warning(f"[{name}] No reading from sensor")
+                continue
+            try:
+                r = readings[name]
+                store_reading(conn, name, r["temp_c"], r["humidity"], r["rssi"])
+                check_alerts(name, r["temp_c"], r["humidity"], cfg)
+            except Exception:
+                log.exception(f"[{name}] Failed to process reading")
 
         elapsed = time.monotonic() - t0
         await asyncio.sleep(max(0, cfg["interval"] - elapsed))
@@ -205,7 +211,7 @@ def _trend(current, previous):
 
 
 def dump_latest():
-    conn = sqlite3.connect(DB_PATH)
+    conn = init_db()
     # Get distinct device names
     devices = conn.execute(
         "SELECT DISTINCT device_name FROM readings"
