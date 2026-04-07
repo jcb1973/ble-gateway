@@ -1,0 +1,12 @@
+#!/bin/sh
+# Daily SQLite backup. Run from cron, e.g.:
+#   17 3 * * * /home/youruser/ble-gateway/backup-sensordata.sh >> /home/youruser/ble-gateway/backup.log 2>&1
+# On the remote host, prune old snapshots with a separate cron, e.g.:
+#   33 4 * * * find /home/remoteuser/backups/ble-gateway -name 'sensordata-*.db.gz' -mtime +30 -delete
+set -e
+STAMP=$(date -u +%Y%m%d)
+TMP=/tmp/sensordata-$STAMP.db
+sqlite3 /home/youruser/ble-gateway/sensordata.db ".backup '$TMP'"
+gzip -f "$TMP"
+scp -q "$TMP.gz" remoteuser@yourserver:/home/remoteuser/backups/ble-gateway/
+rm -f "$TMP.gz"
