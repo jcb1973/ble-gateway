@@ -79,6 +79,10 @@ crontab -e
 
 On the server, `index.html` fetches `status.json` and displays the current sensor state. Serve both files from the same directory (e.g. `/var/www/html/`).
 
+### Deploying web changes
+
+To deploy changes to `web/index.html`, run `./deploy.sh` on the server. It pulls the latest commit and restarts the Caddy container — the restart is required because Caddy bind-mounts `index.html` as a single file, and `git pull`'s inode swap is otherwise invisible to the running container.
+
 ## Running as a service
 
 Create a systemd unit file:
