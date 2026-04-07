@@ -4,11 +4,11 @@ A lightweight Bluetooth Low Energy gateway that monitors environmental condition
 
 ## What it does
 
-1. Scans for a SensorPush HT1 sensor via BLE
+1. Scans for one or more SensorPush HT1 sensors via BLE
 2. Reads temperature and humidity at configurable intervals
 3. Logs every reading to a local SQLite database
-4. Sends an SMS alert via Twilio if humidity drops below a threshold
-5. Respects a cooldown period to avoid alert fatigue
+4. Sends an SMS alert via Twilio if humidity or temperature falls outside configured min/max thresholds
+5. Respects a per-device, per-alert-type cooldown period to avoid alert fatigue
 
 ## Why
 
@@ -17,7 +17,7 @@ Commercial IoT gateways are expensive and lock you into vendor clouds. This is a
 ## Architecture
 
 ```
-SensorPush HT1  ──BLE──▶  Raspberry Pi (gateway.py)
+SensorPush HT1(s) ──BLE──▶ Raspberry Pi (gateway.py)
                                 │
                                 ├──▶ SQLite (local time-series log)
                                 │
@@ -124,11 +124,17 @@ journalctl -u ble-gateway -f        # follow logs
 Edit `config.ini` (see `config.ini.example`):
 
 ```ini
-[sensorpush]
+[device:Bedroom]
 mac = AA:BB:CC:DD:EE:FF
+
+[device:Living Room]
+mac = 11:22:33:44:55:66
 
 [alerts]
 humidity_min = 30.0
+humidity_max = 70.0
+temp_min = 10.0
+temp_max = 30.0
 alert_cooldown_minutes = 60
 sender_id = BLE Gateway
 
@@ -141,3 +147,17 @@ auth_token = your_auth_token_here
 messaging_service_sid = MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 to_phone = +1234567890
 ```
+
+Add one `[device:Name]` section per sensor. All readings are stored in the same SQLite table, distinguished by `device_name`. Alerts fire independently per device and per alert type (humidity low/high, temperature low/high), each with its own cooldown.
+
+## Backups
+
+`backup-sensordata.sh.example` is a template for a nightly cron job that takes a consistent snapshot of `sensordata.db` (using `sqlite3 .backup`), gzips it, and `scp`s it to a remote host. The header of the file contains the cron lines for both the Pi (snapshot) and the remote (30-day prune).
+
+Requires the `sqlite3` CLI on the Pi:
+
+```bash
+sudo apt install sqlite3
+```
+
+Copy the example, edit the paths/host, make it executable, and add the cron line.
