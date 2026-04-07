@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("ble-gateway")
 
-last_alert_times = {}  # keyed by device name
+last_alert_times = {}  # keyed by (device name, alert type)
 
 
 # --- Database ---
@@ -104,16 +104,27 @@ def send_sms(message, twilio_sid, twilio_token, twilio_msg_sid, to_phone):
 # --- Alert check ---
 def check_alerts(device_name, temp_c, humidity, cfg):
     now = time.time()
-    last = last_alert_times.get(device_name, 0)
-    if humidity < cfg["humidity_min"] and (now - last) > cfg["cooldown"]:
-        msg = (
-            f"[{device_name}] Low humidity alert! {humidity}% "
-            f"(threshold: {cfg['humidity_min']}%). "
-            f"Temp: {temp_c}°C"
-        )
+    checks = [
+        ("humidity_low", humidity < cfg["humidity_min"],
+         f"Low humidity alert! {humidity}% (threshold: {cfg['humidity_min']}%)"),
+        ("humidity_high", humidity > cfg["humidity_max"],
+         f"High humidity alert! {humidity}% (threshold: {cfg['humidity_max']}%)"),
+        ("temp_low", temp_c < cfg["temp_min"],
+         f"Low temperature alert! {temp_c}°C (threshold: {cfg['temp_min']}°C)"),
+        ("temp_high", temp_c > cfg["temp_max"],
+         f"High temperature alert! {temp_c}°C (threshold: {cfg['temp_max']}°C)"),
+    ]
+    for alert_type, triggered, detail in checks:
+        if not triggered:
+            continue
+        key = (device_name, alert_type)
+        last = last_alert_times.get(key, 0)
+        if (now - last) <= cfg["cooldown"]:
+            continue
+        msg = f"[{device_name}] {detail}. Temp: {temp_c}°C, Humidity: {humidity}%"
         if send_sms(msg, cfg["twilio_sid"], cfg["twilio_token"],
-                     cfg["twilio_msg_sid"], cfg["to_phone"]):
-            last_alert_times[device_name] = now
+                    cfg["twilio_msg_sid"], cfg["to_phone"]):
+            last_alert_times[key] = now
 
 
 # --- BLE scanning ---
@@ -156,6 +167,9 @@ def load_config():
     return {
         "devices": devices,
         "humidity_min": config.getfloat("alerts", "humidity_min"),
+        "humidity_max": config.getfloat("alerts", "humidity_max"),
+        "temp_min": config.getfloat("alerts", "temp_min"),
+        "temp_max": config.getfloat("alerts", "temp_max"),
         "cooldown": config.getint("alerts", "alert_cooldown_minutes") * 60,
         "sender_id": config.get("alerts", "sender_id"),
         "interval": config.getint("sampling", "interval_seconds"),
@@ -171,7 +185,10 @@ async def main():
     log.info("BLE Gateway starting...")
     for d in cfg["devices"]:
         log.info(f"Device: {d['name']} ({d['mac']})")
-    log.info(f"Humidity alert threshold: {cfg['humidity_min']}%")
+    log.info(
+        f"Alert thresholds: humidity {cfg['humidity_min']}–{cfg['humidity_max']}%, "
+        f"temperature {cfg['temp_min']}–{cfg['temp_max']}°C"
+    )
     log.info(f"Sample interval: {cfg['interval']}s")
 
     conn = init_db()
