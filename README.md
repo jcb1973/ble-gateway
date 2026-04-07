@@ -74,7 +74,7 @@ crontab -e
 ```
 
 ```
-*/5 * * * * /home/youruser/ble-gateway/upload-status.sh >> /home/youruser/ble-gateway/cron.log 2>&1
+*/5 * * * * /home/youruser/ble-gateway/upload-status.sh >> /home/youruser/ble-gateway/upload-status.log 2>&1
 ```
 
 On the server, `index.html` fetches `status.json` and displays the current sensor state. Serve both files from the same directory (e.g. `/var/www/html/`).
