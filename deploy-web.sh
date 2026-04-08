@@ -1,5 +1,7 @@
 #!/bin/sh
-# Deploy ble-gateway web changes on jcblondon.
+# Deploy ble-gateway web changes on jcblondon (vultr webserver).
+# Do NOT run on the Pi — that's a different host with a different job
+# (scanner/gateway.py); use deploy-pi.sh there.
 #
 # Required because Caddy (owned by the sms-reminders compose) bind-mounts
 # web/index.html as a single file. `git pull` replaces the file via

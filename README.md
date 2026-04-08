@@ -81,7 +81,9 @@ On the server, `index.html` fetches `status.json` and displays the current senso
 
 ### Deploying web changes
 
-To deploy changes to `web/index.html`, run `./deploy.sh` on the server. It pulls the latest commit and restarts the Caddy container — the restart is required because Caddy bind-mounts `index.html` as a single file, and `git pull`'s inode swap is otherwise invisible to the running container.
+To deploy changes to `web/index.html`, run `./deploy-web.sh` **on the web server** (the vultr box hosting Caddy, not the Pi). It pulls the latest commit and restarts the Caddy container — the restart is required because Caddy bind-mounts `index.html` as a single file, and `git pull`'s inode swap is otherwise invisible to the running container.
+
+The Pi runs a separate copy of the repo for the scanner and its own `git pull` cadence; don't confuse the two.
 
 ## Running as a service
 
