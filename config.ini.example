@@ -1,8 +1,10 @@
 [device:Bedroom]
 mac = AA:BB:CC:DD:EE:FF
+alert = yes
 
 [device:Living Room]
 mac = 11:22:33:44:55:66
+alert = no
 
 [alerts]
 humidity_min = 30.0

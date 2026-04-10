@@ -163,7 +163,8 @@ def load_config():
     for section in config.sections():
         if section.startswith("device:"):
             name = section.split(":", 1)[1]
-            devices.append({"name": name, "mac": config.get(section, "mac")})
+            alert = config.getboolean(section, "alert", fallback=True)
+            devices.append({"name": name, "mac": config.get(section, "mac"), "alert": alert})
     return {
         "devices": devices,
         "humidity_min": config.getfloat("alerts", "humidity_min"),
@@ -184,7 +185,8 @@ async def main():
     cfg = load_config()
     log.info("BLE Gateway starting...")
     for d in cfg["devices"]:
-        log.info(f"Device: {d['name']} ({d['mac']})")
+        alert_status = "yes" if d.get("alert", True) else "no"
+        log.info(f"Device: {d['name']} ({d['mac']}) alert={alert_status}")
     log.info(
         f"Alert thresholds: humidity {cfg['humidity_min']}–{cfg['humidity_max']}%, "
         f"temperature {cfg['temp_min']}–{cfg['temp_max']}°C"
@@ -208,7 +210,8 @@ async def main():
             try:
                 r = readings[name]
                 store_reading(conn, name, r["temp_c"], r["humidity"], r["rssi"])
-                check_alerts(name, r["temp_c"], r["humidity"], cfg)
+                if d.get("alert", True):
+                    check_alerts(name, r["temp_c"], r["humidity"], cfg)
             except Exception:
                 log.exception(f"[{name}] Failed to process reading")
 
