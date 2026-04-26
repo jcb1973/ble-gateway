@@ -46,6 +46,30 @@ ORDER BY hour DESC;
 EOF
 
 echo ""
+echo "Sparkline (oldest → newest):"
+sqlite3 "$DB" << EOF | LC_NUMERIC=C awk -F'|' '
+  BEGIN { split("▁ ▂ ▃ ▄ ▅ ▆ ▇ █", c, " ") }
+  { v[++n] = $2; if (n==1 || $2<min) min=$2; if (n==1 || $2>max) max=$2 }
+  END {
+    r = max - min
+    for (i=1; i<=n; i++) {
+      idx = (r==0) ? 4 : int((v[i]-min)/r * 7) + 1
+      printf "%s", c[idx]
+    }
+    printf "  (min %.2f → max %.2f)\n", min, max
+  }
+'
+SELECT
+  substr(timestamp, 1, 13) as hour,
+  ROUND(AVG(CAST(humidity_pct AS FLOAT)), 2) as humidity_pct
+FROM readings
+WHERE device_name='d28'
+  AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-48 hours')
+GROUP BY substr(timestamp, 1, 13)
+ORDER BY hour ASC;
+EOF
+
+echo ""
 echo "=== D-28 Risk Assessment ==="
 
 CURRENT=$(sqlite3 "$DB" "SELECT CAST(humidity_pct AS FLOAT) FROM readings WHERE device_name='d28' ORDER BY timestamp DESC LIMIT 1;")
