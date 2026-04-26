@@ -3,7 +3,7 @@
 # Humidity analysis script for PicoClaw
 DB="$HOME/ble-gateway/sensordata.db"
 
-echo "=== 24-Hour Humidity Report ==="
+echo "=== 48-Hour Humidity Report ==="
 echo ""
 
 # Get latest readings for each device
@@ -19,7 +19,7 @@ ORDER BY device_name;
 EOF
 
 echo ""
-echo "24-Hour Averages:"
+echo "48-Hour Averages:"
 sqlite3 "$DB" << EOF
 SELECT
   device_name,
@@ -27,12 +27,12 @@ SELECT
   ROUND(MIN(CAST(humidity_pct AS FLOAT)), 2) as min_pct,
   ROUND(MAX(CAST(humidity_pct AS FLOAT)), 2) as max_pct
 FROM readings
-WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-24 hours')
+WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-48 hours')
 GROUP BY device_name;
 EOF
 
 echo ""
-echo "=== D-28 Hourly Trend (last 24 hours) ==="
+echo "=== D-28 Hourly Trend (last 48 hours) ==="
 
 sqlite3 "$DB" << EOF
 SELECT
@@ -40,7 +40,7 @@ SELECT
   ROUND(AVG(CAST(humidity_pct AS FLOAT)), 2) as humidity_pct
 FROM readings
 WHERE device_name='d28'
-  AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-24 hours')
+  AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-48 hours')
 GROUP BY substr(timestamp, 1, 13)
 ORDER BY hour DESC;
 EOF
@@ -49,11 +49,11 @@ echo ""
 echo "=== D-28 Risk Assessment ==="
 
 CURRENT=$(sqlite3 "$DB" "SELECT CAST(humidity_pct AS FLOAT) FROM readings WHERE device_name='d28' ORDER BY timestamp DESC LIMIT 1;")
-EARLIEST=$(sqlite3 "$DB" "SELECT CAST(humidity_pct AS FLOAT) FROM readings WHERE device_name='d28' AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-24 hours') ORDER BY timestamp ASC LIMIT 1;")
+EARLIEST=$(sqlite3 "$DB" "SELECT CAST(humidity_pct AS FLOAT) FROM readings WHERE device_name='d28' AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-48 hours') ORDER BY timestamp ASC LIMIT 1;")
 CHANGE=$(awk -v c="$CURRENT" -v e="$EARLIEST" 'BEGIN{printf "%.2f", c-e}')
 
 echo "Current: ${CURRENT}% (started at ${EARLIEST}% today)"
-echo "Change: ${CHANGE}% over 24 hours"
+echo "Change: ${CHANGE}% over 48 hours"
 echo ""
 
 # Smart warnings
@@ -66,9 +66,9 @@ else
 fi
 
 if (( $(echo "$CHANGE < -2" | awk '{if($1<-2) print 1; else print 0}') )); then
-  echo "⚠️  Dropping fast (${CHANGE}% in 24 hours)"
+  echo "⚠️  Dropping fast (${CHANGE}% in 48 hours)"
 elif (( $(echo "$CHANGE < 0" | awk '{if($1<0) print 1; else print 0}') )); then
-  echo "→ Gradually declining (${CHANGE}% in 24 hours)"
+  echo "→ Gradually declining (${CHANGE}% in 48 hours)"
 else
   echo "↗ Rising/stable"
 fi
