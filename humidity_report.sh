@@ -50,7 +50,7 @@ echo "=== D-28 Risk Assessment ==="
 
 CURRENT=$(sqlite3 "$DB" "SELECT CAST(humidity_pct AS FLOAT) FROM readings WHERE device_name='d28' ORDER BY timestamp DESC LIMIT 1;")
 EARLIEST=$(sqlite3 "$DB" "SELECT CAST(humidity_pct AS FLOAT) FROM readings WHERE device_name='d28' AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-24 hours') ORDER BY timestamp ASC LIMIT 1;")
-CHANGE=$(echo "$CURRENT - $EARLIEST" | awk '{printf "%.2f", $1}')
+CHANGE=$(awk -v c="$CURRENT" -v e="$EARLIEST" 'BEGIN{printf "%.2f", c-e}')
 
 echo "Current: ${CURRENT}% (started at ${EARLIEST}% today)"
 echo "Change: ${CHANGE}% over 24 hours"
