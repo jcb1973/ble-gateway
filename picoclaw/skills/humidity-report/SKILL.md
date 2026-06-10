@@ -21,6 +21,18 @@ It prints plain-text sections:
 - Hourly breakdown + ASCII sparkline for d28
 - Risk assessment (🟢/🟡/🔴 already computed by the script — do not re-derive)
 
+If the user wants the status on the kitchen LED sign (e.g. "humidity on
+the sign", "put it on the led sign"), add `--matrix` as an extra
+argument — the script then also pushes the D-28 status to the sign
+itself:
+
+```bash
+~/ble-gateway/humidity_report.sh --matrix
+```
+
+The printed report is unchanged; reply from it as usual. Do not call
+the `matrix` client yourself for this.
+
 ## Analysis & Response
 
 Base your reply ONLY on the script output. Report:

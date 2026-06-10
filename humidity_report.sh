@@ -1,7 +1,14 @@
 #!/bin/bash
 
 # Humidity analysis script for PicoClaw
+#
+# --matrix: ALSO push the D-28 status to the kitchen LED sign via
+# /usr/local/bin/matrix (kitchen-sign repo, docs/consumer-skills.md).
+# The printed report is unchanged; sign failures are swallowed.
 DB="$HOME/ble-gateway/sensordata.db"
+
+MATRIX=0
+[[ "${1:-}" == "--matrix" ]] && MATRIX=1
 
 echo "=== 48-Hour Humidity Report ==="
 echo ""
@@ -83,10 +90,22 @@ echo ""
 # Smart warnings
 if (( $(echo "$CURRENT < 42" | awk '{if($1<42) print 1; else print 0}') )); then
   echo "🔴 ALERT: D-28 at ${CURRENT}% (below safe 45-50% range)"
+  SIGN_COLOR=red
 elif (( $(echo "$CURRENT < 45" | awk '{if($1<45) print 1; else print 0}') )); then
   echo "🟡 WARNING: D-28 at ${CURRENT}% (slightly low, keep monitoring)"
+  SIGN_COLOR=yellow
 else
   echo "🟢 HEALTHY: D-28 at ${CURRENT}% (optimal range)"
+  SIGN_COLOR=green
+fi
+
+if [[ "$MATRIX" == "1" && -n "$CURRENT" ]]; then
+  # fire-and-forget: output discarded, failures swallowed — the sign
+  # must never break the report
+  SIGN_TEXT=$(LC_NUMERIC=C awk -v c="$CURRENT" -v ch="$CHANGE" \
+    'BEGIN{printf "D28 %.0f%%|48H %+.1f%%", c, ch}')
+  /usr/local/bin/matrix show bottom "$SIGN_TEXT" \
+    --color "$SIGN_COLOR" --ttl 1h >/dev/null 2>&1 || true
 fi
 
 if (( $(echo "$CHANGE < -2" | awk '{if($1<-2) print 1; else print 0}') )); then
