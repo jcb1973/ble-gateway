@@ -1,0 +1,24 @@
+[device:Bedroom]
+mac = AA:BB:CC:DD:EE:FF
+alert = yes
+
+[device:Living Room]
+mac = 11:22:33:44:55:66
+alert = no
+
+[alerts]
+humidity_min = 30.0
+humidity_max = 70.0
+temp_min = 10.0
+temp_max = 30.0
+alert_cooldown_minutes = 60
+sender_id = BLE Gateway
+
+[sampling]
+interval_seconds = 300
+
+[twilio]
+account_sid = ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+auth_token = your_auth_token_here
+messaging_service_sid = MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+to_phone = +1234567890

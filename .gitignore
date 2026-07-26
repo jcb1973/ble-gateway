@@ -1,9 +1,10 @@
 status.json
 upload-status.log
-*.ini
+.creds
 *.cfg
 *.db
 bin/
 lib/
 lib64
 upload-status.sh
+.venv/
