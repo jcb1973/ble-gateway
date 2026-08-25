@@ -75,6 +75,13 @@ sensor, `[device:<name>]`), so it is recorded here too. As of **2026-08-25**:
   shows a **frozen `d18` card** alongside the live `ambient` one, because
   `dump_latest()` emits every `DISTINCT device_name` ever seen. That card
   is expected, not a fault.
+- **`d28` is the mobile one — gaps in its series are normal.** It travels with
+  the guitar, so it drops out of BLE range for hours at a time (a ~19 h gap on
+  2026-08-25 was just that). Don't diagnose a silent `d28` as a dead sensor or a
+  broken gateway until you've checked that `ambient`/`mandolin` are also quiet.
+  Note that `humidity_report.sh` prints `Current: <x>%` and its 🟢/🟡/🔴 verdict
+  from the newest `d28` row **with no staleness check**, so during a range gap
+  the report reads as current while quoting day-old data.
 - **Thresholds are global, not per-device** (`[alerts]` in `config.ini`:
   40–60% RH, 15–28°C) and are tuned for instrument cases. `alert` is only
   a per-device on/off switch. So keep `ambient` at `alert = no` — a bedroom
