@@ -16,7 +16,9 @@ Run the humidity script:
 ```
 
 It prints plain-text sections:
-- Current humidity for d28, d18, mandolin
+- Current humidity for d28, ambient, mandolin (`ambient` = bedroom room humidity,
+  not an instrument — the D-18 was sold; its pre-2026-08-25 history stays
+  under the old `d18` name)
 - 48-hour average, min, max for each device
 - Hourly breakdown + ASCII sparkline for d28
 - Risk assessment (🟢/🟡/🔴 already computed by the script — do not re-derive)

@@ -56,6 +56,35 @@ sudo systemctl status ble-gateway
 journalctl -u ble-gateway -f  # tail logs
 ```
 
+## Sensors (live roster)
+
+The device roster lives only in the gitignored `config.ini` (section per
+sensor, `[device:<name>]`), so it is recorded here too. As of **2026-08-25**:
+
+| Name | What it is | `alert` |
+|---|---|---|
+| `d28` | Martin D-28 case | `yes` |
+| `ambient` | Bedroom room humidity — **not** an instrument | `no` |
+| `mandolin` | Mandolin case | `no` |
+
+- **`ambient` was `d18`.** The D-18 was sold on 2026-08-25 and its sensor
+  repurposed as bedroom ambient. Only the config section was renamed, so
+  **all pre-rename history stays under `device_name = 'd18'`** in
+  `sensordata.db` (33,848 rows, 2026-04-10 → 2026-08-25) — deliberately
+  left in place as the guitar's record. Consequence: blestatus.jcb1973.dev
+  shows a **frozen `d18` card** alongside the live `ambient` one, because
+  `dump_latest()` emits every `DISTINCT device_name` ever seen. That card
+  is expected, not a fault.
+- **Thresholds are global, not per-device** (`[alerts]` in `config.ini`:
+  40–60% RH, 15–28°C) and are tuned for instrument cases. `alert` is only
+  a per-device on/off switch. So keep `ambient` at `alert = no` — a bedroom
+  judged against guitar-case thresholds would just cry wolf. Per-device
+  thresholds would need a `gateway.py` change (`check_alerts` reads the one
+  global `cfg`).
+- Renaming a sensor = edit the section header in `config.ini` on the Pi,
+  then `sudo systemctl restart ble-gateway`. Confirm via
+  `journalctl -u ble-gateway -n 10` — startup logs one `Device:` line each.
+
 ## Cron & monitoring
 
 - **Scanner:** runs as a systemd service (`ble-gateway.service`), not cron. Respawns on crash.
