@@ -5,7 +5,9 @@
 # --matrix: ALSO push the D-28 status to the kitchen LED sign via
 # /usr/local/bin/matrix (kitchen-sign repo, docs/consumer-skills.md).
 # The printed report is unchanged; sign failures are swallowed.
-DB="$HOME/ble-gateway/sensordata.db"
+# BLE_DB override exists so the report can be exercised against a copy of
+# the db without touching the live one.
+DB="${BLE_DB:-$HOME/ble-gateway/sensordata.db}"
 
 MATRIX=0
 [[ "${1:-}" == "--matrix" ]] && MATRIX=1
@@ -27,15 +29,37 @@ EOF
 
 echo ""
 echo "48-Hour Averages:"
+# The average is taken over 10-minute TIME BUCKETS, not over raw rows.
+# With more than one gateway scanning, a sensor heard by two boxes produces
+# twice the rows for the same instants -- averaging rows directly would then
+# weight periods by how many radios happened to hear them rather than by
+# duration, tilting the mean toward whenever coverage was densest. The two
+# boxes never disagree about the value (they decode the same advert payload);
+# it is purely the sample density that varies. Bucketing first makes the
+# result independent of how many gateways were listening.
+# MIN/MAX are unaffected by density, so they stay over raw readings.
 sqlite3 "$DB" << EOF
-SELECT
-  device_name,
-  ROUND(AVG(CAST(humidity_pct AS FLOAT)), 2) as avg_pct,
-  ROUND(MIN(CAST(humidity_pct AS FLOAT)), 2) as min_pct,
-  ROUND(MAX(CAST(humidity_pct AS FLOAT)), 2) as max_pct
-FROM readings
-WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-48 hours')
-GROUP BY device_name;
+WITH win AS (
+  SELECT * FROM readings
+  WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-48 hours')
+),
+buckets AS (
+  SELECT device_name, substr(timestamp, 1, 15) AS b,
+         AVG(CAST(humidity_pct AS FLOAT)) AS v
+  FROM win GROUP BY device_name, b
+),
+avgs AS (
+  SELECT device_name, ROUND(AVG(v), 2) AS avg_pct FROM buckets GROUP BY device_name
+),
+ranges AS (
+  SELECT device_name,
+         ROUND(MIN(CAST(humidity_pct AS FLOAT)), 2) AS min_pct,
+         ROUND(MAX(CAST(humidity_pct AS FLOAT)), 2) AS max_pct
+  FROM win GROUP BY device_name
+)
+SELECT a.device_name, a.avg_pct, r.min_pct, r.max_pct
+FROM avgs a JOIN ranges r USING (device_name)
+ORDER BY a.device_name;
 EOF
 
 echo ""

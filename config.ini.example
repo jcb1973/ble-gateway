@@ -1,3 +1,10 @@
+[gateway]
+; Which box this is. Stamped on every row as `source`, so several scanning
+; Pis can pool observations into one db without colliding. Defaults to the
+; hostname if omitted. Keep it stable -- changing it orphans that gateway's
+; history and re-syncs it under the new name.
+name = jcb-pi
+
 [device:Bedroom]
 mac = AA:BB:CC:DD:EE:FF
 alert = yes

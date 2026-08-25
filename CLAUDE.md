@@ -92,6 +92,66 @@ sensor, `[device:<name>]`), so it is recorded here too. As of **2026-08-25**:
   then `sudo systemctl restart ble-gateway`. Confirm via
   `journalctl -u ble-gateway -n 10` — startup logs one `Device:` line each.
 
+## Multi-gateway scanning
+
+SensorPush HT1s are pure **advertisers** — `take_readings()` runs a passive
+`BleakScanner` and decodes `ad_data.manufacturer_data`; it never connects. So
+any number of Pis can hear the same sensor at once with zero contention, and
+adding a scanner is purely additive coverage. (This would not work with a
+connect-based sensor, where one central would hold the link exclusively.)
+
+**Topology.** Remote scanners log locally; jcb-pi **pulls** with
+`sync-gateways.sh` and merges into its own `sensordata.db`. Pull rather than
+push so jcb-pi is the only process writing its own db, and so remote scanners
+need no credentials for it. `REMOTES` in that script is a list — a third
+scanner is one more entry.
+
+**`source`** is stamped on every row from `[gateway] name` in `config.ini`
+(default: hostname) and records **which radio heard the advert**. It is set at
+observation time and carried through the sync verbatim, never assigned on
+import.
+
+**Duplicates.** Two kinds, only one of which is a problem:
+
+- *Same sensor heard by two boxes* — **not** duplicates. Both decode the same
+  payload so the values are identical; only RSSI differs, and that difference
+  is the point (whichever box hears `d28` loudest says roughly where the
+  guitar is). Both rows are kept; they are collapsed at read time.
+- *Re-imported rows* — real duplicates, prevented by the UNIQUE index
+  `readings_obs(source, device_name, timestamp)` plus `INSERT OR IGNORE`.
+  **Correctness comes from the constraint, not the watermark**: re-importing is
+  a no-op, so a sync that dies mid-import simply doesn't advance its watermark
+  and re-sends harmlessly next run.
+
+**Traps this design already stepped in — don't undo these:**
+
+- **`source` must be `NOT NULL`.** SQLite treats NULLs as *distinct* in a
+  UNIQUE index, so a nullable `source` would wave duplicate imports straight
+  through a constraint that looks like it's protecting you.
+- **Order by `timestamp`, never by `id`.** Imported rows get local ids in
+  *import* order, so a gateway returning from an outage lands its backlog with
+  the highest ids and the oldest timestamps. `dump_latest()` ordering by id
+  would then serve a stale reading as current.
+- **Trend must compare same-`source` rows.** Consecutive rows by time can be
+  two boxes' views of the same instant; differencing those measures the gap
+  between gateways, not change over time, and the arrow flips on reporting
+  order.
+- **Averages must bucket by time, not average rows.** A sensor heard by two
+  boxes yields double the rows for the same instants, so a plain `AVG` weights
+  periods by how many radios were listening rather than by duration. The boxes
+  never disagree on the value — it is purely sample density. See the 48-hour
+  block in `humidity_report.sh`.
+- **Never put the db on a network filesystem.** SQLite locking is unsafe over
+  NFS/sshfs. Remote rows are shipped as CSV and imported *locally*.
+- WAL is required once a second writer exists; the old rollback journal
+  produced intermittent `database is locked`.
+
+**Range matters more than you'd think.** Measured 2026-08-25: pairdrop hears
+`d28` at ~−61 dBm avg (peak −45) while jcb-pi could not hear it at all for
+23 h; jcb-pi hears `ambient` at −53 and `mandolin` at −69, both much better
+than pairdrop's −73/−82. The boxes are complementary, not redundant. Test any
+prospective new scanner's range before deploying it rather than assuming.
+
 ## Cron & monitoring
 
 - **Scanner:** runs as a systemd service (`ble-gateway.service`), not cron. Respawns on crash.
