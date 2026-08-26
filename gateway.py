@@ -349,16 +349,27 @@ def _trend(current, previous):
 
 
 def dump_latest():
+    """Latest reading per CURRENTLY CONFIGURED sensor, as status.json.
+
+    Driven by config.ini, not by what the db has ever seen. `config.ini` is the
+    statement of what is monitored now; the db is the historical record, and the
+    two are deliberately allowed to differ. A retired sensor therefore drops off
+    the dashboard the moment it leaves the config, while keeping every row it
+    ever logged -- which is what happened to `d18` when the D-18 was sold and
+    that sensor became `ambient`.
+
+    (Before this, the query was SELECT DISTINCT device_name FROM readings, so
+    anything ever recorded appeared on the dashboard forever, frozen at its last
+    reading and indistinguishable from a sensor that had just died.)
+    """
+    cfg = load_config()
     conn = init_db()
-    # Get distinct device names
-    devices = conn.execute(
-        "SELECT DISTINCT device_name FROM readings"
-    ).fetchall()
-    if not devices:
+    names = [d["name"] for d in cfg["devices"]]
+    if not names:
         print("{}", file=sys.stderr)
         sys.exit(1)
     out = {}
-    for (name,) in devices:
+    for name in names:
         # Newest observation of this sensor, whichever gateway heard it. With
         # several scanners this is the merge: freshest wins, so a sensor drops
         # off the dashboard only when NO gateway can hear it.

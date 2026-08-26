@@ -71,10 +71,12 @@ sensor, `[device:<name>]`), so it is recorded here too. As of **2026-08-25**:
   repurposed as bedroom ambient. Only the config section was renamed, so
   **all pre-rename history stays under `device_name = 'd18'`** in
   `sensordata.db` (33,848 rows, 2026-04-10 → 2026-08-25) — deliberately
-  left in place as the guitar's record. Consequence: blestatus.jcb1973.dev
-  shows a **frozen `d18` card** alongside the live `ambient` one, because
-  `dump_latest()` emits every `DISTINCT device_name` ever seen. That card
-  is expected, not a fault.
+  left in place as the guitar's record. It is **not** on the dashboard:
+  `dump_latest()` reports the sensors listed in `config.ini`, not every
+  `device_name` the db has ever seen, so a retired sensor keeps its history
+  and drops off the display. (It did show as a frozen `d18` card until
+  2026-08-26, when that query was made config-driven.) Retiring any future
+  sensor is therefore just: remove its `[device:...]` section.
 - **`d28` is the mobile one — gaps in its series are normal.** It travels with
   the guitar, so it drops out of BLE range for hours at a time (a ~19 h gap on
   2026-08-25 was just that). Don't diagnose a silent `d28` as a dead sensor or a
