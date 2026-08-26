@@ -165,6 +165,21 @@ only pairdrop can hear it. Consequences worth knowing:
 - WAL is required once a second writer exists; the old rollback journal
   produced intermittent `database is locked`.
 
+**The gateway roster is deliberately jcb-pi + pairdrop, and that is enough.**
+Those are the two rooms guitars are actually stored in, so between them every
+instrument is covered wherever it realistically sits. **kitchen-pi was
+considered and declined** (2026-08-26) — it is a capable Pi 4B with working
+Bluetooth (currently rfkill-blocked) and ample headroom, but it watches a room
+guitars don't live in, so it would add scanning load and a third thing to keep
+running in exchange for no coverage. It also drives the LED matrix with no
+`isolcpus`, so it is the one box where extra interrupt load could show up as
+visible panel flicker. Don't add it without a reason that has changed.
+
+If a third scanner ever *is* warranted, nothing in the design is two-gateway
+specific: it is one more `REMOTES` entry in `sync-gateways.sh`, plus the same
+scan-only config. **Range-test it first** — the pairdrop test showed coverage
+is very uneven per box, so assume nothing.
+
 **Range matters more than you'd think.** Measured 2026-08-25: pairdrop hears
 `d28` at ~−61 dBm avg (peak −45) while jcb-pi could not hear it at all for
 23 h; jcb-pi hears `ambient` at −53 and `mandolin` at −69, both much better
