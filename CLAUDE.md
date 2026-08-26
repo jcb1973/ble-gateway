@@ -123,6 +123,25 @@ import.
   a no-op, so a sync that dies mid-import simply doesn't advance its watermark
   and re-sends harmlessly next run.
 
+**Alerting is store-driven** (since 2026-08-26). `run_alert_pass()` thresholds
+the freshest reading per sensor from the **merged** db — any gateway — rather
+than this box's own scan result. That is what lets jcb-pi alert on `d28` while
+only pairdrop can hear it. Consequences worth knowing:
+
+- It thresholds the **freshest row, not any breaching row**: a stale breach that
+  a newer healthy reading has superseded must not fire.
+- **Absence is never alerted on.** `d28` drops out of range whenever the guitar
+  moves, so a missing-sensor alert would cry wolf. Staleness is logged
+  edge-triggered instead (once going stale, once returning), not every scan.
+- `max_reading_age_minutes` (default 20) must comfortably exceed **scan
+  interval + sync interval** — a remote gateway's row only lands here after
+  `sync-gateways.sh` runs, so too tight a window silently makes remote-only
+  sensors unalertable. That failure is invisible: no error, just no alerts.
+- The cooldown is still an in-memory dict, so it **resets on service restart**.
+  Only one box alerts, so that is the sole reason a duplicate SMS could appear.
+- pairdrop passes `alert_devices == []` and returns immediately, so the same
+  code runs on both boxes with no branching.
+
 **Traps this design already stepped in — don't undo these:**
 
 - **`source` must be `NOT NULL`.** SQLite treats NULLs as *distinct* in a

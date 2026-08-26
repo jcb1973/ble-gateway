@@ -19,6 +19,11 @@ humidity_max = 70.0
 temp_min = 10.0
 temp_max = 30.0
 alert_cooldown_minutes = 60
+; How stale the freshest reading may be and still be alerted on. Alerting
+; reads the MERGED store (all gateways), so this must comfortably exceed
+; scan interval + sync interval -- a remote gateway's row only lands here
+; after sync-gateways.sh runs. Absence itself is never alerted on.
+max_reading_age_minutes = 20
 sender_id = BLE Gateway
 
 [sampling]

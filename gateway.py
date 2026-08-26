@@ -6,7 +6,7 @@ import socket
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
@@ -24,6 +24,7 @@ logging.basicConfig(
 log = logging.getLogger("ble-gateway")
 
 last_alert_times = {}  # keyed by (device name, alert type)
+stale_devices = set()  # alerting devices with no fresh reading, for edge-triggered logs
 
 
 # --- Database ---
@@ -141,7 +142,7 @@ def send_sms(message, twilio_sid, twilio_token, twilio_msg_sid, to_phone):
         return False
 
 # --- Alert check ---
-def check_alerts(device_name, temp_c, humidity, cfg):
+def check_alerts(device_name, temp_c, humidity, cfg, source):
     now = time.time()
     checks = [
         ("humidity_low", humidity < cfg["humidity_min"],
@@ -160,10 +161,63 @@ def check_alerts(device_name, temp_c, humidity, cfg):
         last = last_alert_times.get(key, 0)
         if (now - last) <= cfg["cooldown"]:
             continue
-        msg = f"[{device_name}] {detail}. Temp: {temp_c}°C, Humidity: {humidity}%"
+        msg = (f"[{device_name}] {detail}. Temp: {temp_c}°C, "
+               f"Humidity: {humidity}% (heard by {source})")
         if send_sms(msg, cfg["twilio_sid"], cfg["twilio_token"],
                     cfg["twilio_msg_sid"], cfg["to_phone"]):
             last_alert_times[key] = now
+
+
+def latest_readings(conn, max_age_seconds):
+    """Freshest reading per sensor across ALL gateways, newer than max_age.
+
+    This is what makes alerting work when the only radio able to hear a sensor
+    sits on another box: `d28` travels with the guitar and is routinely audible
+    only to pairdrop, whose rows arrive here via sync-gateways.sh.
+
+    Ordered by timestamp, never by id -- imported rows are assigned local ids in
+    IMPORT order, so a gateway returning from an outage lands old observations
+    under the newest ids.
+
+    Relies on SQLite's documented bare-column rule: with a single MAX() in an
+    aggregate query, the other selected columns are taken from the row that
+    produced that maximum.
+    """
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=max_age_seconds)).isoformat()
+    return conn.execute(
+        "SELECT device_name, temperature_c, humidity_pct, source, MAX(timestamp) "
+        "FROM readings WHERE timestamp >= ? GROUP BY device_name",
+        (cutoff,),
+    ).fetchall()
+
+
+def run_alert_pass(conn, cfg, alert_devices):
+    """Threshold the merged store rather than this box's own scan.
+
+    Deliberately does NOT alert on absence. A sensor going quiet is normal
+    here -- `d28` drops out of range whenever the guitar moves -- so a
+    missing-sensor alert would cry wolf constantly. Absence is logged
+    edge-triggered instead: once when it goes stale, once when it returns.
+    """
+    if not alert_devices:
+        return
+    fresh = {row[0]: row for row in latest_readings(conn, cfg["max_reading_age"])}
+    for name in alert_devices:
+        row = fresh.get(name)
+        if row is None:
+            if name not in stale_devices:
+                stale_devices.add(name)
+                log.info(
+                    f"[{name}] no reading from any gateway within "
+                    f"{cfg['max_reading_age'] // 60} min - alerting paused for it"
+                )
+            continue
+        if name in stale_devices:
+            stale_devices.discard(name)
+            log.info(f"[{name}] fresh reading again (via {row[3]}) - alerting resumed")
+        _, temp_c, humidity, source, _ts = row
+        check_alerts(name, temp_c, humidity, cfg, source)
 
 
 # --- BLE scanning ---
@@ -214,6 +268,12 @@ def load_config():
         "temp_min": config.getfloat("alerts", "temp_min"),
         "temp_max": config.getfloat("alerts", "temp_max"),
         "cooldown": config.getint("alerts", "alert_cooldown_minutes") * 60,
+        # How old the freshest reading may be and still be alerted on. Must
+        # comfortably exceed scan interval + sync interval, since a remote
+        # gateway's row reaches this box only after sync-gateways.sh runs;
+        # too tight and remote sensors silently stop being alertable.
+        "max_reading_age": config.getint(
+            "alerts", "max_reading_age_minutes", fallback=20) * 60,
         "sender_id": config.get("alerts", "sender_id"),
         "interval": config.getint("sampling", "interval_seconds"),
         "twilio_sid": config.get("twilio", "account_sid"),
@@ -236,6 +296,11 @@ async def main():
     log.info(f"Sample interval: {cfg['interval']}s")
 
     conn = init_db()
+    alert_devices = [d["name"] for d in cfg["devices"] if d.get("alert", True)]
+    log.info(
+        f"Alerting on {alert_devices or 'nothing'} from the merged store "
+        f"(max reading age {cfg['max_reading_age'] // 60} min)"
+    )
 
     while True:
         t0 = time.monotonic()
@@ -247,16 +312,26 @@ async def main():
         for d in cfg["devices"]:
             name = d["name"]
             if name not in readings:
-                log.warning(f"[{name}] No reading from sensor")
+                # Not a fault: with several gateways, a sensor out of range of
+                # THIS radio may well have been heard by another. Whether it is
+                # actually missing is decided by the alert pass against the
+                # merged store, not here.
+                log.info(f"[{name}] not heard by {cfg['source']} this scan")
                 continue
             try:
                 r = readings[name]
                 store_reading(conn, cfg["source"], name, r["temp_c"],
                               r["humidity"], r["rssi"])
-                if d.get("alert", True):
-                    check_alerts(name, r["temp_c"], r["humidity"], cfg)
             except Exception:
                 log.exception(f"[{name}] Failed to process reading")
+
+        # Alerting is driven by the merged store, NOT by the scan above, so a
+        # sensor this box cannot hear is still alertable via another gateway's
+        # synced rows. Runs even when the local scan found nothing at all.
+        try:
+            run_alert_pass(conn, cfg, alert_devices)
+        except Exception:
+            log.exception("Alert pass failed")
 
         elapsed = time.monotonic() - t0
         await asyncio.sleep(max(0, cfg["interval"] - elapsed))
