@@ -188,6 +188,63 @@ is very uneven per box, so assume nothing.
 than pairdrop's −73/−82. The boxes are complementary, not redundant. Test any
 prospective new scanner's range before deploying it rather than assuming.
 
+## Ambient as alert context
+
+`ambient` is a room sensor, not an instrument, and since **2026-08-27** it also
+captions every alert SMS. `[alerts] context_device` in `config.ini` names it;
+`run_alert_pass` quotes its reading on each outgoing alert:
+
+```
+[d28] Low humidity alert! 38.0% (threshold: 40.0%). Temp: 21.0°C,
+Humidity: 38.0% (heard by pairdrop) | ambient 24% @ 21.5°C, case drying
+```
+
+**Why.** A bare case alert cannot distinguish the two situations that want
+opposite actions: `d28 38%` with the room at 24% is a flat-wide winter dry snap
+and the case is merely following the house, while the same `d28 38%` with the
+room at 47% is case-specific — an empty humidifier or a lid left open.
+
+**The verdict is computed on dew point, the printed numbers are RH.** This is
+deliberate and must not be "simplified" to an RH comparison. RH is a ratio
+against a temperature-dependent capacity, and the case and its room are not the
+same temperature (the mandolin case measures 1–2 °C cooler than its room). RH
+also moves on its own with temperature: measured 2026-08-26, the bedroom went
+52.3% → 41.8% RH over ten hours while its dew point *rose*, 10.3 → 11.2 °C — the
+air showing the higher RH held less water. Only dew point says which way
+moisture actually flows. RH is still what gets printed because that is what the
+thresholds are stated in and what reads at a glance. The ±0.5 °C dead band
+around "in balance" is sensor tolerance; below it the direction is noise.
+
+**Keep `ambient` at `alert = no`.** Thresholding a room on the 40–60% case
+band would fire constantly — the room's RH span was 27 points across two days
+(41.4–68.4) against the mandolin case's 1.8 (51.3–53.1). The room is useful as
+*context*, never as a subject.
+
+**Failure mode is silence, by design.** The context reading is taken from the
+same freshness-filtered merged store as the alert itself, so it can never quote
+a day-old room reading; if the reference sensor is unset, unheard or stale, the
+alert simply goes out in its previous uncaptioned form. A sensor is never
+captioned with itself, so naming an alerting device as `context_device` is safe.
+
+**Cost:** the `°` character forces UCS-2 encoding (67 chars/segment), so
+captioning takes a typical alert from 2 Twilio segments to 3.
+
+**What the case/room physics actually supports** (measured 2026-04→08, and the
+basis for anything built here later):
+
+- The case is a ~15:1 low-pass filter on the room's *daily* cycle — it ignores
+  it almost completely.
+- It follows the *seasonal* cycle in full, just slowly: `mandolin` ran 41.4%
+  (mid-April) → 57.0% (end June) → 52.2% (late August).
+- So the room leads the case by days-to-weeks, which is what makes a predictive
+  "case breaches 40% in ~7 days" alert possible later. It is **not** built yet:
+  as of 2026-08-27 there are only two days of true room data (`ambient` was the
+  `d18` case sensor before then), enough to establish the physics but nowhere
+  near enough to fit a drift rate. Revisit after a winter.
+- **This db has never seen a Stockholm winter** (history starts 2026-03-30).
+  Outdoor air at −5 °C heated to 22 °C lands the flat at 15–25% RH; the first
+  genuine low-humidity alerts are still ahead.
+
 ## Cron & monitoring
 
 - **Scanner:** runs as a systemd service (`ble-gateway.service`), not cron. Respawns on crash.

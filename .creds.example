@@ -24,6 +24,12 @@ alert_cooldown_minutes = 60
 ; scan interval + sync interval -- a remote gateway's row only lands here
 ; after sync-gateways.sh runs. Absence itself is never alerted on.
 max_reading_age_minutes = 20
+; Reference sensor quoted in every alert SMS, so an alert distinguishes "the
+; whole flat is dry" from "this one case is dry" -- opposite actions. Must name
+; a [device:...] section; it need NOT be an alerting one, and a room sensor
+; should stay alert = no (room RH swings ~27 points a day on temperature alone
+; and would cry wolf against case thresholds). Omit for uncaptioned alerts.
+context_device = Living Room
 sender_id = BLE Gateway
 
 [sampling]

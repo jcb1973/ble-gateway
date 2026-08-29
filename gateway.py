@@ -2,6 +2,7 @@ import asyncio
 import configparser
 import json
 import logging
+import math
 import socket
 import sqlite3
 import sys
@@ -142,7 +143,47 @@ def send_sms(message, twilio_sid, twilio_token, twilio_msg_sid, to_phone):
         return False
 
 # --- Alert check ---
-def check_alerts(device_name, temp_c, humidity, cfg, source):
+def dew_point_c(temp_c, humidity):
+    """Magnus-Tetens dew point -- the physically comparable humidity number.
+
+    RH is a ratio against a temperature-dependent capacity, so a case and the
+    room it sits in cannot be compared on RH unless they are the same
+    temperature, and they are not (measured: the mandolin case runs 1-2C cooler
+    than its room). Worse, RH moves on its own with temperature: on 2026-08-26
+    the bedroom went 52.3% -> 41.8% RH over ten hours while its dew point ROSE,
+    10.3 -> 11.2C. The air showing the *higher* RH held *less* water. Dew point
+    is what says which way moisture actually flows.
+    """
+    a, b = 17.62, 243.12
+    gamma = math.log(max(humidity, 1.0) / 100.0) + a * temp_c / (b + temp_c)
+    return b * gamma / (a - gamma)
+
+
+def format_context(context, temp_c, humidity):
+    """Room context for an alert SMS: is the flat dry, or is it this case?
+
+    That is the one question a bare alert leaves open, and the two answers want
+    opposite actions. `d28 38%` with the room at 24% is a flat-wide winter dry
+    snap and the case is merely following the house; the same `d28 38%` with the
+    room at 47% is case-specific -- an empty humidifier or a case left open.
+
+    Prints RH (what the thresholds are in, and what reads at a glance) but
+    decides the verdict on dew point, per dew_point_c above.
+    """
+    name, ctx_temp, ctx_hum = context
+    delta = dew_point_c(ctx_temp, ctx_hum) - dew_point_c(temp_c, humidity)
+    # 0.5C of slack: inside that the two are within sensor tolerance of each
+    # other and naming a direction would just be reporting noise.
+    if delta < -0.5:
+        verdict = "case drying"
+    elif delta > 0.5:
+        verdict = "case gaining"
+    else:
+        verdict = "in balance"
+    return f" | {name} {ctx_hum:.0f}% @ {ctx_temp:.1f}°C, {verdict}"
+
+
+def check_alerts(device_name, temp_c, humidity, cfg, source, context=None):
     now = time.time()
     checks = [
         ("humidity_low", humidity < cfg["humidity_min"],
@@ -163,6 +204,8 @@ def check_alerts(device_name, temp_c, humidity, cfg, source):
             continue
         msg = (f"[{device_name}] {detail}. Temp: {temp_c}°C, "
                f"Humidity: {humidity}% (heard by {source})")
+        if context:
+            msg += format_context(context, temp_c, humidity)
         if send_sms(msg, cfg["twilio_sid"], cfg["twilio_token"],
                     cfg["twilio_msg_sid"], cfg["to_phone"]):
             last_alert_times[key] = now
@@ -203,6 +246,14 @@ def run_alert_pass(conn, cfg, alert_devices):
     if not alert_devices:
         return
     fresh = {row[0]: row for row in latest_readings(conn, cfg["max_reading_age"])}
+    # Room context comes out of the same freshness-filtered merged store the
+    # alert itself does, so it can never caption an alert with a day-old room
+    # reading. If the reference sensor is unset, unheard or stale it is simply
+    # absent here and alerts go out in their previous form -- context is an
+    # enrichment, never a precondition for alerting.
+    ctx_name = cfg["context_device"]
+    ctx_row = fresh.get(ctx_name) if ctx_name else None
+    context = (ctx_name, ctx_row[1], ctx_row[2]) if ctx_row else None
     for name in alert_devices:
         row = fresh.get(name)
         if row is None:
@@ -217,7 +268,8 @@ def run_alert_pass(conn, cfg, alert_devices):
             stale_devices.discard(name)
             log.info(f"[{name}] fresh reading again (via {row[3]}) - alerting resumed")
         _, temp_c, humidity, source, _ts = row
-        check_alerts(name, temp_c, humidity, cfg, source)
+        check_alerts(name, temp_c, humidity, cfg, source,
+                     context if name != ctx_name else None)
 
 
 # --- BLE scanning ---
@@ -274,6 +326,13 @@ def load_config():
         # too tight and remote sensors silently stop being alertable.
         "max_reading_age": config.getint(
             "alerts", "max_reading_age_minutes", fallback=20) * 60,
+        # Reference sensor whose reading is quoted in every alert SMS, to
+        # separate "the whole flat is dry" from "this case is dry". Names a
+        # device that must also have a [device:...] section (it need not be an
+        # alerting one -- `ambient` is alert = no and should stay that way:
+        # room RH swings ~27 points a day on temperature alone and would cry
+        # wolf against case thresholds). Optional; unset = alerts unchanged.
+        "context_device": config.get("alerts", "context_device", fallback="") or None,
         "sender_id": config.get("alerts", "sender_id"),
         "interval": config.getint("sampling", "interval_seconds"),
         "twilio_sid": config.get("twilio", "account_sid"),
@@ -300,6 +359,9 @@ async def main():
     log.info(
         f"Alerting on {alert_devices or 'nothing'} from the merged store "
         f"(max reading age {cfg['max_reading_age'] // 60} min)"
+    )
+    log.info(
+        f"Alert context sensor: {cfg['context_device'] or 'none (alerts uncaptioned)'}"
     )
 
     while True:
